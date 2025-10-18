@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Brain, Activity, FileText, Zap } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { submitAnalysis } from '../services/apiService';
 
 const AnalysisProgress: React.FC = () => {
-  const { setCurrentStep, setPredictions } = useAppContext();
+  const { analysisData, setCurrentStep, setPredictions } = useAppContext();
   const [currentStage, setCurrentStage] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const stages = [
     {
@@ -45,45 +47,69 @@ const AnalysisProgress: React.FC = () => {
   ];
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentStage(prev => {
-        if (prev < stages.length - 1) {
-          return prev + 1;
-        } else {
-          // Simulate analysis completion
-          const mockResults = [
-            {
-              condition: "Alzheimer's Disease",
-              confidence: 0.87,
-              riskLevel: 'High' as const,
-              recommendations: ['Consult with neurologist', 'Consider additional cognitive testing', 'Discuss treatment options']
-            },
-            {
-              condition: 'Depression',
-              confidence: 0.72,
-              riskLevel: 'Medium' as const,
-              recommendations: ['Mental health evaluation', 'Consider therapy options', 'Monitor symptoms']
-            },
-            {
-              condition: 'Epilepsy',
-              confidence: 0.34,
-              riskLevel: 'Low' as const,
-              recommendations: ['Continue monitoring', 'Regular follow-up']
-            }
-          ];
-          
-          setTimeout(() => {
-            setPredictions(mockResults);
-            setCurrentStep(2);
-          }, 1500);
-          
-          return prev;
-        }
-      });
-    }, 2000);
+    let isMounted = true;
+    let timer: NodeJS.Timeout;
 
-    return () => clearInterval(timer);
-  }, [setCurrentStep, setPredictions]);
+    const runAnalysis = async () => {
+      timer = setInterval(() => {
+        setCurrentStage(prev => {
+          if (prev < stages.length - 1) {
+            return prev + 1;
+          }
+          return prev;
+        });
+      }, 2000);
+
+      try {
+        const results = await submitAnalysis(analysisData);
+
+        if (isMounted) {
+          clearInterval(timer);
+          setCurrentStage(stages.length - 1);
+
+          setTimeout(() => {
+            if (isMounted) {
+              setPredictions(results);
+              setCurrentStep(2);
+            }
+          }, 1500);
+        }
+      } catch (err) {
+        if (isMounted) {
+          clearInterval(timer);
+          setError(err instanceof Error ? err.message : 'Analysis failed');
+          console.error('Analysis error:', err);
+        }
+      }
+    };
+
+    runAnalysis();
+
+    return () => {
+      isMounted = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [analysisData, setCurrentStep, setPredictions]);
+
+  if (error) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
+          <h3 className="text-2xl font-bold text-red-900 mb-4">Analysis Error</h3>
+          <p className="text-red-700 mb-6">{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              setCurrentStep(0);
+            }}
+            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
